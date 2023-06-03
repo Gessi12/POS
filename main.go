@@ -1,58 +1,107 @@
 package main
 
 import (
-	"github.com/davecgh/go-spew/spew"
-	"github.com/joho/godotenv"
-	"log"
-	"net"
-	"os"
+	"encoding/hex"
+	"fmt"
 	"time"
 )
 
+//创建币池数组Coins
+var Coins []Coin
+//调用InitBlockChain函数，生成一个区块数组
+var BlockChain []Block
+//默认难度值dif为1
+var Dif int64 = 1
+//创建矿工数组Miners
+var Miners []Miner
+
+
 func main() {
-	//在同目录下创建prop.env文件("PORT=8088")
-	err := godotenv.Load("prop.env")
-	if err != nil {
-		log.Fatal(err)
+	//默认难度值dif为1
+	//var Dif int64 = 1
+	//创建矿工数组Miners
+	//var Miners []Miner
+	//初始化矿工
+	Miners = InitMiners()
+	//添加矿工
+	AddMiners()
+	//创建币池数组Coins
+	//var Coins []Coin
+	//给矿工数组中的矿工添加币
+	Coins = InitCoins(Miners)
+	for i := 0; i < len(Miners); i++ {
+		AddCoin(NewCoin(int64(i), Miners), &Coins)
 	}
+	//调用InitBlockChain函数，生成一个区块数组
+	//var BlockChain []Block
+	BlockChain = InitBlockChain(Miners, Coins)
+	//fmt.Println("创建第二个区块")
+	//GenerateBlock(0, Miners, Coins[0], "second block", &BlockChain)
+	//fmt.Println("创建结束")
+	//时间延迟，给出币龄
+	time.Sleep(5*time.Second)
+	UpdateMiners(&Coins, &Miners)
+	PrintMiners(Miners)
 
-	//构建创世块genesisBlock
-	t := time.Now()
-	genesisBlock := Block{}
-	genesisBlock = Block{0, t.String(), 0, CalculateBlockHash(genesisBlock), "", ""}
-	spew.Dump(genesisBlock)
+	//挖矿
+	IsContinueMining()
 
-	Blockchain = append(Blockchain, genesisBlock)
-	//读取.env文件，获取Server端口8088
-	httpPort := os.Getenv("PORT")
-	//监听server
-	server, err := net.Listen("tcp", ":"+httpPort)
-	if err != nil {
-		log.Fatal(err)
+	//打印区块
+	//PrintBlockChain()
+
+}
+
+//传入Miners数组，打印矿工数组每个矿工信息的函数
+
+func PrintMiners(Miners []Miner) {
+	for i := 0; i <= len(Miners)-1; i++ {
+		fmt.Println("Miner", i, ":", hex.EncodeToString(Miners[i].addr), Miners[i].num, Miners[i].coinAge)
 	}
-	log.Println("HTTP Server Listening on port : ", httpPort)
-	defer server.Close()
-
-	go func() {
-		for candidate := range candidateBlocks {
-			mutex.Lock()
-			tempBlocks = append(tempBlocks, candidate)
-			mutex.Unlock()
+}
+//打印区块
+func PrintBlockChain()  {
+	for i, block := range BlockChain {
+		prevBlockHash := hex.EncodeToString(block.PrevHash)
+		currentHash := hex.EncodeToString(block.Hash)
+		if i == 0{
+			fmt.Printf("prevBlockHash: %s, currentHash : 0x%s \n",prevBlockHash,currentHash)
+		} else{
+			fmt.Printf("prevBlockHash: 0x%s, currentHash : 0x%s \n",prevBlockHash,currentHash)
 		}
-	}()
-
-	go func() {
-		for {
-			PickWinner() //选举winner
-		}
-	}()
-
-	for {
-		conn, err := server.Accept() //开启服务
-		if err != nil {
-			log.Fatal(err)
-		}
-		go HandleConn(conn) //处理连接
 	}
+}
 
+//挖矿
+
+func Mine(Miners []Miner,Dif int64, tradeData string,BlockChain *[]Block)  {
+	fmt.Println("开始挖矿")
+	winnerIndex := CorrectMiner(&Miners , Dif, tradeData)
+	if winnerIndex == -1 {
+		panic("挖矿失败")
+	}
+	fmt.Println("挖矿成功")
+	fmt.Println("本轮获胜矿工:",winnerIndex)
+	AddCoin(NewCoin(int64(winnerIndex), Miners), &Coins)
+	GenerateBlock(winnerIndex, Miners, Coins[len(Coins)-1], tradeData, BlockChain)
+	time.Sleep(5*time.Second)
+	UpdateMiners(&Coins, &Miners)
+	PrintMiners(Miners)
+}
+
+func IsContinueMining() {
+	var isContinue string
+	for  {
+		Mine(Miners, Dif, "New block",&BlockChain)
+		fmt.Println("是否继续挖矿?y or n")
+		fmt.Scanf("%s",&isContinue)
+		if isContinue == "y" {
+			continue
+		}else if isContinue == "n" {
+			fmt.Println("挖矿结束")
+			break
+		}else{
+			fmt.Println("输入错误")
+			continue
+		}
+	}
 }
